@@ -10,6 +10,7 @@ use rnote_compose::transform::Transformable;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::error;
+use std::process::Command;
 
 /// Document export format.
 #[derive(
@@ -34,6 +35,8 @@ pub enum DocExportFormat {
     Pdf,
     #[serde(rename = "xopp")]
     Xopp,
+    #[serde(rename = "latex_experimental")]
+    LatexExperimental,
 }
 
 impl Default for DocExportFormat {
@@ -62,6 +65,7 @@ impl DocExportFormat {
             DocExportFormat::Svg => String::from("svg"),
             DocExportFormat::Pdf => String::from("pdf"),
             DocExportFormat::Xopp => String::from("xopp"),
+            DocExportFormat::LatexExperimental => String::from("pdf"),
         }
     }
 }
@@ -403,6 +407,9 @@ impl Engine {
             DocExportFormat::Xopp => {
                 self.export_doc_as_xopp_bytes(title, doc_export_prefs_override)
             }
+            DocExportFormat::LatexExperimental => {
+                self.export_doc_as_latex_experimental(title, doc_export_prefs_override)
+            }
         }
     }
 
@@ -433,9 +440,9 @@ impl Engine {
                         Some(doc_svg.bounds),
                         false,
                     )
-                    .as_str(),
+                        .as_str(),
                 )
-                .into_bytes())
+                    .into_bytes())
             };
 
             if oneshot_sender.send(result()).is_err() {
@@ -707,9 +714,9 @@ impl Engine {
                                 Some(page_svg.bounds),
                                 false,
                             )
-                            .as_str(),
+                                .as_str(),
                         )
-                        .into_bytes())
+                            .into_bytes())
                     })
                     .collect()
             };
@@ -831,9 +838,9 @@ impl Engine {
                             Some(svg.bounds),
                             false,
                         )
-                        .as_str(),
+                            .as_str(),
                     )
-                    .into_bytes(),
+                        .into_bytes(),
                 ))
             };
             if oneshot_sender.send(result()).is_err() {
@@ -895,6 +902,148 @@ impl Engine {
                 error!(
                     "Sending result to receiver failed while exporting selection as bitmap image bytes. Receiver already dropped"
                 );
+            }
+        });
+
+        oneshot_receiver
+    }
+
+
+    // Experimental
+    fn export_doc_as_latex_experimental(
+        &self,
+        title: String,
+        doc_export_prefs_override: Option<DocExportPrefs>,
+    ) -> oneshot::Receiver<Result<Vec<u8>, anyhow::Error>> {
+        let (oneshot_sender, oneshot_receiver) = oneshot::channel::<anyhow::Result<Vec<u8>>>();
+
+        let doc_export_prefs = doc_export_prefs_override.unwrap_or(self.config.read().export_prefs.doc_export_prefs);
+        let pages_content = self.extract_pages_content(doc_export_prefs.page_order);
+        let format_size = self.document.config.format.size();
+
+        let config_read = self.config.read();
+        let api_key = config_read.gemini_api_key.clone();
+        let model_name = config_read.gemini_model_name.clone();
+        drop(config_read);
+
+        rayon::spawn(move || {
+            let result = || -> anyhow::Result<Vec<u8>> {
+
+                let target_surface =
+                    cairo::PdfSurface::for_stream(format_size[0], format_size[1], Vec::<u8>::new())
+                        .context("Creating Pdf target surface failed.")?;
+
+                target_surface.set_metadata(cairo::PdfMetadata::Title, title.as_str())?;
+
+                {
+                    let cairo_cx = cairo::Context::new(&target_surface)
+                        .context("Creating new cairo context for pdf target surface failed.")?;
+
+                    for page_content in pages_content.into_iter() {
+                        let Some(page_bounds) = page_content.bounds() else { continue; };
+                        cairo_cx.save()?;
+                        cairo_cx.translate(-page_bounds.mins[0], -page_bounds.mins[1]);
+                        page_content.draw_to_cairo(
+                            &cairo_cx,
+                            doc_export_prefs.with_background,
+                            doc_export_prefs.with_pattern,
+                            doc_export_prefs.optimize_printing,
+                            DocExportPrefs::MARGIN,
+                            Engine::STROKE_EXPORT_IMAGE_SCALE,
+                        )?;
+                        cairo_cx.show_page()?;
+                        cairo_cx.restore()?;
+                    }
+                }
+                let pdf_bytes = *target_surface
+                    .finish_output_stream()
+                    .map_err(|e| anyhow::anyhow!("Finishing outputstream failed: {:?}", e))?
+                    .downcast::<Vec<u8>>()
+                    .map_err(|_| anyhow::anyhow!("Downcast failed"))?;
+
+                if api_key.trim().is_empty() {
+                    return Err(anyhow::anyhow!("Gemini API key is not set in settings!"));
+                }
+
+                use base64::Engine as _;
+                let base64_pdf = base64::engine::general_purpose::STANDARD.encode(&pdf_bytes);
+
+                let clean_model_name = model_name.trim();
+                let model = if clean_model_name.is_empty() { "gemini-flash-latest" } else { clean_model_name };
+
+                println!("DEBUG: Gemini Export - Model: '{}' (len: {})", model, model.len());
+
+                let url = format!(
+                    "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+                    model, api_key.trim()
+                );
+
+                let client = reqwest::blocking::Client::new();
+                let response = client.post(url)
+                    .json(&serde_json::json!({
+                        "contents": [{
+                            "parts": [
+                                {"text": "Convert this handwritten note PDF to a compile-ready LaTeX code. Output ONLY the LaTeX code inside a markdown code block (```latex ... ```), nothing else. Ensure packages like graphicx, amsmath are included."},
+                                {
+                                    "inline_data": {
+                                        "mime_type": "application/pdf",
+                                        "data": base64_pdf
+                                    }
+                                }
+                            ]
+                        }]
+                    }))
+                    .send()?;
+
+                if !response.status().is_success() {
+                    let status = response.status();
+                    let text = response.text().unwrap_or_default();
+                    return Err(anyhow::anyhow!("Gemini API error: {} - Response: {}", status, text));
+                }
+
+                let response_json: serde_json::Value = response.json()?;
+                let content_text = response_json["candidates"][0]["content"]["parts"][0]["text"]
+                    .as_str()
+                    .ok_or(anyhow::anyhow!("No text in Gemini response"))?;
+
+                let latex_code = content_text
+                    .replace("```latex", "")
+                    .replace("```", "")
+                    .trim()
+                    .to_string();
+
+                let temp_dir = std::env::temp_dir();
+                let job_name = format!("rnote_latex_{}", uuid::Uuid::new_v4());
+                let tex_path = temp_dir.join(format!("{}.tex", job_name));
+                let pdf_path = temp_dir.join(format!("{}.pdf", job_name));
+
+                std::fs::write(&tex_path, &latex_code)?;
+
+                let output = Command::new("pdflatex")
+                    .arg("-interaction=nonstopmode")
+                    .arg("-output-directory")
+                    .arg(&temp_dir)
+                    .arg(&tex_path)
+                    .output()?;
+
+                if !output.status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let _ = std::fs::remove_file(&tex_path);
+                    return Err(anyhow::anyhow!("pdflatex failed:\n{}", stderr));
+                }
+
+                let result_pdf_bytes = std::fs::read(&pdf_path)?;
+
+                let _ = std::fs::remove_file(&tex_path);
+                let _ = std::fs::remove_file(&pdf_path);
+                let _ = std::fs::remove_file(temp_dir.join(format!("{}.log", job_name)));
+                let _ = std::fs::remove_file(temp_dir.join(format!("{}.aux", job_name)));
+
+                Ok(result_pdf_bytes)
+            };
+
+            if oneshot_sender.send(result()).is_err() {
+                error!("Sending result failed while exporting LaTeX.");
             }
         });
 

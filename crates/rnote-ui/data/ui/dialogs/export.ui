@@ -135,6 +135,7 @@
                                       <item translatable="yes">Svg</item>
                                       <item translatable="yes">Pdf</item>
                                       <item translatable="yes">Xopp</item>
+                                      <item translatable="yes">LaTeX PDF</item>
                                     </items>
                                   </object>
                                 </property>

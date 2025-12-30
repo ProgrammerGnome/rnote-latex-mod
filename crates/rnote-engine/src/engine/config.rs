@@ -22,6 +22,10 @@ pub struct EngineConfig {
     pub snap_positions: bool,
     #[serde(skip)]
     pub visual_debug: bool,
+    #[serde(rename = "gemini_api_key")]
+    pub gemini_api_key: String,
+    #[serde(rename = "gemini_model_name")]
+    pub gemini_model_name: String,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -57,5 +61,7 @@ impl EngineConfigShared {
         write.optimize_epd = config.optimize_epd;
         write.snap_positions = config.snap_positions;
         write.visual_debug = config.visual_debug;
+        write.gemini_api_key = config.gemini_api_key;
+        write.gemini_model_name = config.gemini_model_name;
     }
 }

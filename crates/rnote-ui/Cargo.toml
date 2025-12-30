@@ -13,11 +13,16 @@ version.workspace = true
 rnote-compose = { workspace = true }
 rnote-engine = { workspace = true, features = ["ui"] }
 
+reqwest = { version = "0.12", features = ["json", "blocking", "multipart"] }
+tokio = { version = "1", features = ["full"] }
+
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+base64 = { workspace = true }
 adw = { workspace = true }
 anyhow = { workspace = true }
 approx = { workspace = true }
 async-fs = { workspace = true }
-base64 = { workspace = true }
 cairo-rs = { workspace = true }
 fs_extra = { workspace = true }
 futures = { workspace = true }
@@ -47,8 +52,6 @@ rayon = { workspace = true }
 regex = { workspace = true }
 rough_piet = { workspace = true }
 roughr = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 svg = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

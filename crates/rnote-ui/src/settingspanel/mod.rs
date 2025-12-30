@@ -33,6 +33,10 @@ mod imp {
         pub(crate) app_restart_toast_singleton: RefCell<Option<adw::Toast>>,
 
         #[template_child]
+        pub ai_gemini_api_key_row: TemplateChild<adw::PasswordEntryRow>,
+        #[template_child]
+        pub ai_gemini_model_name_row: TemplateChild<adw::EntryRow>,
+        #[template_child]
         pub(crate) settings_scroller: TemplateChild<ScrolledWindow>,
         #[template_child]
         pub(crate) general_autosave_row: TemplateChild<adw::SwitchRow>,
@@ -422,6 +426,16 @@ impl RnSettingsPanel {
         let optimize_epd = appwindow.engine_config().read().optimize_epd;
         imp.general_optimize_epd_row.set_active(optimize_epd);
 
+        let api_key = appwindow.engine_config().read().gemini_api_key.clone();
+        if imp.ai_gemini_api_key_row.text() != api_key {
+            imp.ai_gemini_api_key_row.set_text(&api_key);
+        }
+
+        let model_name = appwindow.engine_config().read().gemini_model_name.clone();
+        if self.imp().ai_gemini_model_name_row.text() != model_name {
+            self.imp().ai_gemini_model_name_row.set_text(&model_name);
+        }
+
         if let Some(canvas) = canvas {
             let format_border_color = canvas.engine_ref().document.config.format.border_color;
 
@@ -603,6 +617,25 @@ impl RnSettingsPanel {
             move |row| {
                 let optimize_epd = row.is_active();
                 appwindow.engine_config().write().optimize_epd = optimize_epd;
+            }
+        ));
+
+        imp.ai_gemini_api_key_row.connect_changed(clone!(
+            #[weak]
+            appwindow,
+            move |row| {
+                let text = row.text().to_string();
+                appwindow.engine_config().write().gemini_api_key = text;
+            }
+        ));
+
+        imp.ai_gemini_model_name_row.connect_changed(clone!(
+            #[weak] appwindow,
+            move |row| {
+                let text = row.text().to_string();
+                if !text.is_empty() {
+                    appwindow.engine_config().write().gemini_model_name = text;
+                }
             }
         ));
 

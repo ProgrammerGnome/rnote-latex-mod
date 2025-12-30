@@ -386,6 +386,19 @@ fn create_filedialog_export_doc(
             }
             filter.set_name(Some(&gettext("Xopp")));
         }
+
+        DocExportFormat::LatexExperimental => {
+            if cfg!(target_os = "windows") {
+                filter.add_pattern("*.pdf");
+            } else {
+                filter.add_mime_type("application/pdf");
+            }
+            if cfg!(target_os = "macos") {
+                filter.add_suffix("pdf");
+            }
+            filter.set_name(Some(&gettext("LaTeX PDF (Experimental)")));
+        }
+
     }
     let file_ext = doc_export_prefs.export_format.file_ext();
     let file_name = crate::utils::default_file_title_for_export(
