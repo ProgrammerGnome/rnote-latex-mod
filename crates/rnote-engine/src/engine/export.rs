@@ -978,7 +978,9 @@ impl Engine {
                     model, api_key.trim()
                 );
 
-                let client = reqwest::blocking::Client::new();
+                let client = reqwest::blocking::Client::builder()
+                    .timeout(std::time::Duration::from_secs(120)) // 120 sec = 2 min
+                    .build()?;
                 let response = client.post(url)
                     .json(&serde_json::json!({
                         "contents": [{
