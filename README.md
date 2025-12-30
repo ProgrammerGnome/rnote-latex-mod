@@ -29,6 +29,17 @@ This repository is a fork of the original [Rnote](https://github.com/flxzt/rnote
 To use the AI features, navigate to **Settings** -> **AI Features** within the app:
 - **Gemini API Key:** Enter your Google AI Studio API key.
 - **Model Name:** Specify the model to use (leave it blank to use: `gemini-flash-latest`).
+
+### How to compile and run this project:
+```shell
+just setup-dev
+```
+```shell
+just build
+```
+```shell
+just run-ui
+```
 ---
 
 ## Features — original version, not the fork
