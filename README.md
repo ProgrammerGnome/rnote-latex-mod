@@ -40,6 +40,9 @@ just build
 ```shell
 just run-ui
 ```
+
+### TO DO:
+- add prompt customization function to the user interface
 ---
 
 ## Features — original version, not the fork
